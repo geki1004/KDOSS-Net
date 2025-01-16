@@ -1,0 +1,17 @@
+GPU: '0' # -1 is CPU
+
+
+BATCH_SIZE : 4
+NUM_EPOCHS : 400
+
+OPTIM:
+  LR_INIT: 1e-4
+
+# data
+DATA_DIR : 'C:\Users\8138\Downloads\data\cropweed_total\IJRR2017\occ\gated2' #'C:\Users\8138\Downloads\data\cropweed_total\CWFID\occ\2' #'C:\Users\shc\Downloads\data\cropweed_total\IJRR2017\occ\2' #'C:\Users\8138\Downloads\data\cropweed_total\CWFID\occ\2nd'
+SAVE_DIR : 'D:\save\bonirob\seg'
+NUM_CLASSES : 3
+RESIZE : 512
+
+# resume training
+LOAD_WEIGHTS : ''

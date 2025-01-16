@@ -1,0 +1,17 @@
+GPU: '0' # -1 is CPU
+
+
+BATCH_SIZE : 4
+NUM_EPOCHS : 400
+
+OPTIM:
+  LR_INIT: 1e-4
+
+# data
+DATA_DIR : 'C:\Users\shc01\Downloads\data\cropweed_total\IJRR2017\occ\1'
+SAVE_DIR : 'D:\save\bonirob\object_prediction'
+NUM_CLASSES : 2 #background, foreground
+RESIZE : 512
+
+# resume training
+LOAD_WEIGHTS : ''
