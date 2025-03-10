@@ -36,212 +36,7 @@ random.seed(seed_value)
 # Numpy 시드 설정
 np.random.seed(seed_value)
 
-class AT(nn.Module):
-	'''
-	Paying More Attention to Attention: Improving the Performance of Convolutional
-	Neural Netkworks wia Attention Transfer
-	https://arxiv.org/pdf/1612.03928.pdf
-	'''
-	def __init__(self, p):
-		super(AT, self).__init__()
-		self.p = p
 
-	def forward(self, fm_s, fm_t):
-		loss = F.mse_loss(self.attention_map(fm_s), self.attention_map(fm_t))
-
-		return loss
-
-	def attention_map(self, fm, eps=1e-6):
-		am = torch.pow(torch.abs(fm), self.p)
-		am = torch.sum(am, dim=1, keepdim=True)
-		norm = torch.norm(am, dim=(2,3), keepdim=True)
-		am = torch.div(am, norm+eps)
-
-		return am
-
-class SEBlock(nn.Module):
-    def __init__(self, in_channels, reduction_ratio=16):
-        """
-        Args:
-            in_channels (int): Input channel size.
-            reduction_ratio (int): Reduction ratio for channel squeeze.
-        """
-        super(SEBlock, self).__init__()
-        self.global_avg_pool = nn.AdaptiveAvgPool2d(1)  # Global Average Pooling
-        #self.fc1 = nn.Linear(in_channels, in_channels // reduction_ratio, bias=False)  # Squeeze
-        self.fc1 = nn.Conv2d(in_channels, in_channels // reduction_ratio, kernel_size=1)
-        self.relu = nn.ReLU(inplace=True)
-        #self.fc2 = nn.Linear(in_channels // reduction_ratio, in_channels, bias=False)  # Excitation
-        self.fc2 = nn.Conv2d(in_channels // reduction_ratio, in_channels, kernel_size=1)
-        self.sigmoid = nn.Sigmoid()  # Scale
-
-    def forward(self, x):
-        batch_size, channels, _, _ = x.size()
-        # Global Average Pooling
-        se = self.global_avg_pool(x)#.view(batch_size, channels)
-        # Fully connected layers
-        se = self.fc1(se)
-        se = self.relu(se)
-        se = self.fc2(se)
-        se = self.sigmoid(se)#.view(batch_size, channels, 1, 1)  # Reshape to match input dimensions
-        # Scale the input feature map
-        return x * se.expand_as(x)
-
-class ChannelAttention(nn.Module):
-    def __init__(self, in_channels, reduction_ratio=16):
-        super(ChannelAttention, self).__init__()
-
-        self.avg_pool = nn.AdaptiveAvgPool2d(1)  # Global Average Pooling
-        self.max_pool = nn.AdaptiveMaxPool2d(1)  # Global Max Pooling
-
-        # MLP를 통해 채널 중요도 계산
-        self.flatten = nn.Flatten()
-        self.fc1 = nn.Linear(in_channels, in_channels // reduction_ratio)  # 차원 축소
-        self.relu = nn.ReLU()
-        self.fc2 = nn.Linear(in_channels // reduction_ratio, in_channels)  # 차원 복원
-        self.sigmoid = nn.Sigmoid()
-
-    def forward(self, x):
-        # GAP와 GMP을 각각 계산
-        avg_out = self.avg_pool(x)
-        max_out = self.max_pool(x)
-
-        # Flatten을 통해 (batch_size, channels, 1, 1) -> (batch_size, channels)로 변환
-        avg_out = self.flatten(avg_out)
-        max_out = self.flatten(max_out)
-
-        # 두 pooling 결과를 MLP로 처리하여 채널 중요도 계산
-        avg_out = self.fc1(avg_out)
-        avg_out = self.relu(avg_out)
-        avg_out = self.fc2(avg_out)
-
-        max_out = self.fc1(max_out)
-        max_out = self.relu(max_out)
-        max_out = self.fc2(max_out)
-
-        # 채널 중요도를 결합하고 Sigmoid로 정규화
-        attention = self.sigmoid(avg_out + max_out)
-
-        # attention을 입력에 곱하여 중요한 채널을 강조
-        return x * attention.view(attention.size(0), attention.size(1), 1, 1)
-
-class SpatialAttention(nn.Module):
-    def __init__(self, kernel_size=7):
-        super(SpatialAttention, self).__init__()
-        self.conv = nn.Conv2d(2, 1, kernel_size, padding=kernel_size//2)
-        self.sigmoid = nn.Sigmoid()
-
-    def forward(self, x):
-        avg_out = torch.mean(x, dim=1, keepdim=True)
-        max_out, _ = torch.max(x, dim=1, keepdim=True)
-        out = torch.cat([avg_out, max_out], dim=1)
-        return x * self.sigmoid(self.conv(out))
-
-class CBAM(nn.Module):
-    def __init__(self, in_channels, kernel_size=7, reduction_ratio=16):
-        super(CBAM, self).__init__()
-        self.channel_attention = ChannelAttention(in_channels, reduction_ratio)
-        self.spatial_attention = SpatialAttention(kernel_size)
-
-    def forward(self, x):
-        x = self.channel_attention(x)
-        x = self.spatial_attention(x)
-        return x
-
-class SelfAttention(nn.Module):
-    def __init__(self, in_dim):
-        """
-        Self-Attention Module
-        Args:
-            in_dim (int): Input dimension (e.g., number of channels)
-        """
-        super(SelfAttention, self).__init__()
-        self.query = nn.Conv2d(in_dim, in_dim // 8, kernel_size=1)
-        self.key = nn.Conv2d(in_dim, in_dim // 8, kernel_size=1)
-        self.value = nn.Conv2d(in_dim, in_dim, kernel_size=1)
-
-        self.softmax = nn.Softmax(dim=-1)  # Apply softmax on the last dimension
-
-    def forward(self, x):
-        """
-        Forward pass of the Self-Attention layer.
-        Args:
-            x (Tensor): Input feature map of shape (B, C, H, W)
-
-        Returns:
-            attention_map (Tensor): Attention map of shape (B, H*W, H*W)
-            out (Tensor): Output feature map of shape (B, C, H, W)
-        """
-        B, C, H, W = x.size()
-
-        # Compute query, key, and value
-        query = self.query(x).view(B, -1, H * W)  # Shape: (B, C', H*W)
-        key = self.key(x).view(B, -1, H * W)  # Shape: (B, C', H*W)
-        value = self.value(x).view(B, -1, H * W)  # Shape: (B, C, H*W)
-
-        # Compute attention map
-        attention_map = torch.bmm(query.permute(0, 2, 1), key)  # Shape: (B, H*W, H*W)
-        attention_map = self.softmax(attention_map)  # Normalize
-
-        # Apply attention map to value
-        out = torch.bmm(value, attention_map.permute(0, 2, 1))  # Shape: (B, C, H*W)
-        out = out.view(B, C, H, W)  # Reshape to original spatial dimensions
-
-        return out
-
-class contextual_consistency_loss(nn.Module):
-    def __init__(self):
-        super(contextual_consistency_loss, self).__init__()
-
-    def forward(self, feature_S, feature_T, mask):
-        loss = self.contextual_consistency_loss(feature_S, feature_T, mask)
-        return loss
-
-    def contextual_consistency_loss(self, student_features, teacher_features, mask, reduction='mean'):
-        """
-        student_features: Student의 Feature Map (B, C, H, W)
-        teacher_features: Teacher의 Feature Map (B, C, H, W)
-        mask: 가려진 영역의 Binary Mask (B, 1, H, W)
-        reduction: 'mean' 또는 'sum' (손실 계산 방식)
-        """
-        # 복원된 영역 선택
-        student_inpainted = student_features * mask
-        teacher_inpainted = teacher_features * mask
-
-        # 주변 영역 선택
-        student_context = student_features * (1 - mask)
-        teacher_context = teacher_features * (1 - mask)
-
-        # 채널 평균을 통해 공간적 유사도 계산
-        student_similarity = F.cosine_similarity(student_inpainted, student_context, dim=1)
-        teacher_similarity = F.cosine_similarity(teacher_inpainted, teacher_context, dim=1)
-
-        # Teacher와 Student 간 유사도 차이를 최소화
-        loss = F.mse_loss(student_similarity, teacher_similarity, reduction=reduction)
-        return loss
-class FSP(nn.Module):
-	'''
-	A Gift from Knowledge Distillation: Fast Optimization, Network Minimization and Transfer Learning
-	http://openaccess.thecvf.com/content_cvpr_2017/papers/Yim_A_Gift_From_CVPR_2017_paper.pdf
-	'''
-	def __init__(self):
-		super(FSP, self).__init__()
-
-	def forward(self, fm_s1, fm_s2, fm_t1, fm_t2):
-		loss = F.mse_loss(self.fsp_matrix(fm_s1,fm_s2), self.fsp_matrix(fm_t1,fm_t2))
-
-		return loss
-
-	def fsp_matrix(self, fm1, fm2):
-		if fm1.size(2) > fm2.size(2):
-			fm1 = F.adaptive_avg_pool2d(fm1, (fm2.size(2), fm2.size(3)))
-
-		fm1 = fm1.view(fm1.size(0), fm1.size(1), -1)
-		fm2 = fm2.view(fm2.size(0), fm2.size(1), -1).transpose(1,2)
-
-		fsp = torch.bmm(fm1, fm2) / fm1.size(2)
-
-		return fsp
 class MLP(nn.Sequential):
     '''
     double 3x3 conv layers with Batch normalization and ReLU
@@ -250,13 +45,72 @@ class MLP(nn.Sequential):
     def __init__(self, in_channels, out_channels, kerner_size=1):
         conv_layers = [
             nn.Conv2d(in_channels, out_channels, kerner_size),
-            # nn.BatchNorm2d(out_channels),
             nn.ReLU(),
             nn.Conv2d(out_channels, out_channels, kerner_size),
-            # nn.BatchNorm2d(out_channels),
-            # nn.ReLU(),
         ]
         super(MLP, self).__init__(*conv_layers)
+class ChannelNorm(nn.Module):
+    def __init__(self):
+        super(ChannelNorm, self).__init__()
+
+    def forward(self, featmap):
+        n, c, h, w = featmap.shape
+        featmap = featmap.reshape((n, c, -1))
+        featmap = featmap.softmax(dim=-1)
+        return featmap
+
+
+class CriterionCWD(nn.Module):
+
+    def __init__(self, norm_type='channel', divergence='kl', temperature=4.0):
+
+        super(CriterionCWD, self).__init__()
+
+        # define normalize function
+        if norm_type == 'channel':
+            self.normalize = ChannelNorm()
+        elif norm_type == 'spatial':
+            self.normalize = nn.Softmax(dim=1)
+        elif norm_type == 'channel_mean':
+            self.normalize = lambda x: x.view(x.size(0), x.size(1), -1).mean(-1)
+        else:
+            self.normalize = None
+        self.norm_type = norm_type
+
+        self.temperature = 1.0
+
+        # define loss function
+        if divergence == 'mse':
+            self.criterion = nn.MSELoss(reduction='sum')
+        elif divergence == 'kl':
+            self.criterion = nn.KLDivLoss(reduction='sum')
+            self.temperature = temperature
+        self.divergence = divergence
+
+    def forward(self, preds_S, preds_T):
+
+        n, c, h, w = preds_S.shape
+        # import pdb;pdb.set_trace()
+        if self.normalize is not None:
+            norm_s = self.normalize(preds_S / self.temperature)
+            norm_t = self.normalize(preds_T.detach() / self.temperature)
+        else:
+            norm_s = preds_S
+            norm_t = preds_T.detach()
+
+        if self.divergence == 'kl':
+            norm_s = norm_s.log()
+        loss = self.criterion(norm_s, norm_t)
+
+        # item_loss = [round(self.criterion(norm_t[0][0].log(),norm_t[0][i]).item(),4) for i in range(c)]
+        # import pdb;pdb.set_trace()
+        if self.norm_type == 'channel' or self.norm_type == 'channel_mean':
+            loss /= n * c
+            # loss /= n * h * w
+        else:
+            loss /= n * h * w
+
+        return loss * (self.temperature ** 2)
 class Trainer():
     def __init__(self, opt, cfg, model_T, model_S):
         print(opt)
@@ -268,13 +122,9 @@ class Trainer():
         self.device = cfg['GPU']
         self.num_classes = cfg['NUM_CLASSES']
         self.KD_weight = 0.3
-        #self.self = SelfAttention(in_dim=1024)
-        #self.StudentTransBlock = SEBlock(in_channels=1024, reduction_ratio=16)
-        #self.StudentTransBlock = MLP(in_channels=1024, out_channels=1024)
-        #self.StudentTransBlock2 = MLP(in_channels=64, out_channels=64)
-        #self.StudentTransBlock = ChannelAttention(in_channels=1024, reduction_ratio=16)
-        #self.StudentTransBlock = CBAM(in_channels=1024, reduction_ratio=16)
-        self.StudentTransBlock2 = CBAM(in_channels=64, reduction_ratio=16)
+
+        self.TeacherTransBlock = MLP(in_channels=1024, out_channels=1024)
+
 
         # data load
         train_dir = os.path.join(cfg['DATA_DIR'], 'train')
@@ -285,13 +135,14 @@ class Trainer():
 
         # optimizer
         self.optimizer = torch.optim.Adam([{'params' : model_S.parameters()}], lr=float(cfg['OPTIM']['LR_INIT']), betas=(0.5, 0.999))
-        #self.optimizer.add_param_group({'params': self.StudentTransBlock.parameters()})
-        self.optimizer.add_param_group({'params': self.StudentTransBlock2.parameters()})
+
+        self.optimizer.add_param_group({'params': self.TeacherTransBlock.parameters()})
         # loss function
         self.loss_task = nn.CrossEntropyLoss()
-        self.loss_KD = nn.MSELoss()
-        self.loss_KD_last = nn.MSELoss()
-        self.loss_KD_output = nn.KLDivLoss()
+	    
+        self.loss_KD = CriterionCWD(norm_type='channel', divergence='kl', temperature=4.0)
+        self.loss_KD_last = CriterionCWD(norm_type='channel', divergence='kl', temperature=4.0)
+        self.loss_KD_output = CriterionCWD(norm_type='channel', divergence='kl', temperature=4.0)
         self.temperature = 3
 
         self.measurement = Measurement(self.num_classes)
@@ -303,8 +154,7 @@ class Trainer():
             self.model_S = self.model_S.to(self.device)
             self.model_T = self.model_T.load_state_dict(torch.load(opt.weights_T)['network'])
             self.model_T = self.model_T.to(self.device)
-            #self.StudentTransBlock = self.StudentTransBlock.to(self.device)
-            self.StudentTransBlock2 = self.StudentTransBlock2.to(self.device)
+            self.TeacherTransBlock = self.TeacherTransBlock.to(self.device)
             self.start_epoch, optimizer_statedict, self.best_miou = self.load_checkpoint(cfg['LOAD_WEIGHTS'])  # scheduler_statedict,
             self.optimizer.load_state_dict(optimizer_statedict)
 
@@ -331,8 +181,7 @@ class Trainer():
             self.model_S = self.model_S.to(self.device)
             self.model_T.load_state_dict(torch.load(opt.weights_T)['network'])
             self.model_T = self.model_T.to(self.device)
-            #self.StudentTransBlock = self.StudentTransBlock.to(self.device)
-            self.StudentTransBlock2 = self.StudentTransBlock2.to(self.device)
+            self.TeacherTransBlock = self.TeacherTransBlock.to(self.device)
 
             self.best_miou = 0
         if opt.save_img:
@@ -361,8 +210,7 @@ class Trainer():
 
             self.model_S.train()
             self.model_T.eval()
-            #self.StudentTransBlock.train()
-            self.StudentTransBlock2.train()
+            self.TeacherTransBlock.train()
             trainloader_len = len(self.trainloader)
             self.start_timer()
             for i, data in enumerate(tqdm(self.trainloader), 0):
@@ -376,19 +224,14 @@ class Trainer():
 
                 # predict
                 with torch.no_grad():
-                    pred_T , _ , feature_T_last = self.model_T(input_T)
-
+                    pred_T , feature_T_mid , feature_T_last = self.model_T(input_T)
+		feature_T_mid = self.TeacherTransBlock(feature_T_mid)
                 concat_input = torch.cat((input_img, b_mask), dim=1)
-                pred, _, feature_S_last = self.model_S(concat_input)
-                #feature_S_mid_b = self.StudentTransBlock(feature_S_mid)
-                feature_S_last_b = self.StudentTransBlock2(feature_S_last)
-
-                softmax_S = F.log_softmax(pred/self.temperature, dim=1)
-                softmax_T = F.softmax(pred_T/self.temperature, dim=1)
+                pred, feature_S_mid, feature_S_last = self.model_S(concat_input)
                 # loss
 
                 self.optimizer.zero_grad()
-                loss_output = (1 - self.KD_weight) * self.loss_task(pred, label_img) + self.KD_weight * (self.loss_KD_output(softmax_S, softmax_T) + self.loss_KD_last(feature_S_last_b, feature_T_last)) #+ self.loss_KD(feature_S_mid, feature_T_mid) + self.loss_KD_last(feature_S_last, feature_T_last)
+                loss_output = (1 - self.KD_weight) * self.loss_task(pred, label_img) + self.KD_weight * (self.loss_KD_output(pred, pred_T) + self.loss_KD_last(feature_S_last_b, feature_T_last) + self.loss_KD(feature_S_mid, feature_T_mid))
                 loss_output.backward()
                 # update
                 self.optimizer.step()
@@ -438,8 +281,7 @@ class Trainer():
     def val_test(self, epoch, opt):
         self.model_T.eval()
         self.model_S.eval()
-        #self.StudentTransBlock.eval()
-        self.StudentTransBlock2.eval()
+        self.TeacherTransBlock.eval()
         val_miou, val_loss_task, val_loss_KD = 0, 0, 0
         iou_per_class = np.array([0] * (self.num_classes), dtype=np.float64)
         val_loss_task_list, val_loss_KD_list = [], []
@@ -456,17 +298,13 @@ class Trainer():
             input_T = input_T.to(self.device)
             with torch.no_grad():
                 concat_input = torch.cat((input_img, b_mask), dim=1)
-                pred, _,feature_S_last = self.model_S(concat_input)
-                pred_T, _, feature_T_last = self.model_T(input_T)
-                #pred, _, _ = self.model_S(concat_input)
-                #pred_T, _, _ = self.model_T(input_T)
-                #feature_S_mid_b = self.StudentTransBlock(feature_S_mid)
-                feature_S_last_b = self.StudentTransBlock2(feature_S_last)
+                pred, feature_S_mid,feature_S_last = self.model_S(concat_input)
+                pred_T, feature_S_mid, feature_T_last = self.model_T(input_T)
+                feature_T_mid = self.TeacherTransBlock(feature_T_mid)
 
-                softmax_S = F.log_softmax(pred / self.temperature, dim=1)
-                softmax_T = F.softmax(pred_T / self.temperature, dim=1)
+
                 loss_task = self.loss_task(pred, label_img)
-                loss_KD = self.loss_KD_output(softmax_S, softmax_T) + self.loss_KD_last(feature_S_last_b, feature_T_last) #+ self.loss_KD(feature_S_mid,feature_T_mid)+ self.loss_KD(feature_S_mid,feature_T_mid)+ self.loss_KD_last(feature_S_last, feature_T_last)
+                loss_KD = self.loss_KD_output(pred, pred_T) + self.loss_KD_last(feature_S_last, feature_T_last) + self.loss_KD(feature_S_mid,feature_T_mid)
                 val_loss_task += loss_task.item()
                 val_loss_KD += loss_KD.item()
 
