@@ -440,7 +440,7 @@ if __name__ == '__main__':
 
     if opt.model == 'unet_munet':
         model_T = models.Unet(in_channels=3, num_classes=3, first_outchannels=64)
-        model_S = models.MobileUNet(in_channels=4, num_classes=3)
+        model_S = models.MUNet_S(in_channels=4)
 
     with open(opt.config, 'r') as f:
         cfg = yaml.load(f, Loader=yaml.SafeLoader)
