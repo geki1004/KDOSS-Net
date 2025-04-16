@@ -43,16 +43,17 @@ def save_result_img(input:np.ndarray, target:np.ndarray, pred:np.ndarray, ob:np.
         input_img = np.transpose(input[i], (1, 2, 0)) # (H, W, 3)
 
         input_dir = os.path.join(save_dir, 'input')
-        target_dir = os.path.join(save_dir, 'target')
-        ob_dir = os.path.join(save_dir, 'ob')
+        #target_dir = os.path.join(save_dir, 'target')
+        #ob_dir = os.path.join(save_dir, 'ob')
         b_mask_dir = os.path.join(save_dir, 'b_mask')
         os.makedirs(input_dir, exist_ok=True)
-        os.makedirs(target_dir, exist_ok=True)
-        os.makedirs(ob_dir, exist_ok=True)
+        #os.makedirs(target_dir, exist_ok=True)
+        #os.makedirs(ob_dir, exist_ok=True)
         os.makedirs(b_mask_dir, exist_ok=True)
+        #input_img = input_img
         plt.imsave(os.path.join(input_dir, filename[i]), input_img)
-        Image.fromarray(target.astype(np.uint8)).save(os.path.join(target_dir, filename[i]))
-        Image.fromarray(ob.astype(np.uint8)).save(os.path.join(ob_dir, filename[i]))
+        #Image.fromarray(target.astype(np.uint8)).save(os.path.join(target_dir, filename[i]))
+        #Image.fromarray(ob.astype(np.uint8)).save(os.path.join(ob_dir, filename[i]))
         Image.fromarray(b_mask.astype(np.uint8)).save(os.path.join(b_mask_dir, filename[i]))
 def test(model, opt):
     torch.cuda.empty_cache()
@@ -114,7 +115,7 @@ def test(model, opt):
         test_f1score += f1score
             
         if opt.save_img:
-            image = F.interpolate(image.detach().cpu(), mask_img.shape[-2:], mode='bilinear')
+            image = F.interpolate(input_img.detach().cpu(), mask_img.shape[-2:], mode='bilinear')
             save_result_img(image.numpy(), org_mask, pred.detach().cpu().numpy(), ob, b_mask, filename, os.path.join(save_dir, 'imgs'))
     
     # test finish
@@ -138,7 +139,7 @@ def test(model, opt):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser() #
-    parser.add_argument('--data_dir', type=str, default='C:/Users/shc01/Downloads/data/cropweed_total/IJRR2017/occ/1/test', help='directory that has data')
+    parser.add_argument('--data_dir', type=str, default='C:/Users/shc01/Downloads/data/cropweed_total/rice_s_n_w/occ/KD_2/test', help='directory that has data')
     parser.add_argument('--save_dir', type=str, default='C:/Users/shc01/Downloads', help='directory for saving results')
     parser.add_argument('--weights', type=str, default='D:/save/bonirob/mat_test/Unet-ep400-train-1-0/ckpoints/best_miou.pth', help='weights file for test')
     parser.add_argument('--save_img', type=bool, default=True, help='save result images')

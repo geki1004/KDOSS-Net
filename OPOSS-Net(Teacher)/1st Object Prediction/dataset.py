@@ -69,7 +69,7 @@ class SegDataset(Dataset):
         return image, mask, filename
 
 class object_prediction_Dataset(Dataset):
-    def __init__(self, data_dir, resize=512, inputresize=True, targetresize=True, transform=None, target_transform=None, direction='top', cover_percent=0.2, randomaug=None): #초기화
+    def __init__(self, data_dir, resize=512, inputresize=True, targetresize=True, transform=None, target_transform=None, direction='top', cover_percent=0.1, randomaug=None): #초기화
         self.img_dir = os.path.join(data_dir, 'input')
         self.mask_dir = os.path.join(data_dir, 'target')
         self.resize = resize

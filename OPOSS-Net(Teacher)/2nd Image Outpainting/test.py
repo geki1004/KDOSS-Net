@@ -4,8 +4,8 @@ if __name__ == '__main__':
     from dataset import image_outpainting_Dataset
     from models import Unet, GatedUnet
 
-    output_folder = 'D:/save/GAN/Gated/top_512_1_CWFID_gated/train'
-    test_dir = 'C:/Users/shc01/Downloads/data/cropweed_total/CWFID/occ/1/train'
+    output_folder = 'D:/save/data/CWFID/fold 1/train'
+    test_dir = 'C:/Users/shc01/Downloads/data/cropweed_total/CWFID/occ/KD_1/train'
 
     mean = (0.5, 0.5, 0.5)
     std = (0.5, 0.5, 0.5)

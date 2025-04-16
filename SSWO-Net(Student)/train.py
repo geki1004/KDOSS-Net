@@ -338,7 +338,7 @@ class Trainer():
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--model', type=str, default='munet', help='segmentation model''s name for training')
-    parser.add_argument('--config', type=str, default='./config/outpainted_semantic_segmentation_config.yaml', help='yaml file that has segmentation train config information')
+    parser.add_argument('--config', type=str, default='./config/semantic_segmentation_without_outpainting_config.yaml', help='yaml file that has segmentation train config information')
     parser.add_argument('--save_img', type=bool, default=True, help='save result images')
     parser.add_argument('--save_txt', type=bool, default=True, help='save training process as txt file')
     parser.add_argument('--save_csv', type=bool, default=True, help='save training process as csv file')
