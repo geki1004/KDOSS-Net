@@ -1,4 +1,4 @@
-# Limited FoV dataset
+# Limited FOV dataset
 - [Rice seedling and weed](https://drive.google.com/drive/folders/10uUdejgVJJzJ1T28I3FwPQ_fdwu9S8Zr?usp=drive_link)
 
 - [CWFID](https://drive.google.com/drive/folders/1jaKD4pIIaiCTtAsrihLr8TiTbzqqNBe_?usp=drive_link)
