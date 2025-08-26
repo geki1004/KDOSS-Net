@@ -1,3 +1,5 @@
+# PAPER
+- https://doi.org/10.1016/j.plaphe.2025.100098
 # Limited FOV dataset
 - [Rice seedling and weed](https://drive.google.com/drive/folders/10uUdejgVJJzJ1T28I3FwPQ_fdwu9S8Zr?usp=drive_link)
 
